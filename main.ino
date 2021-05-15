@@ -5,84 +5,98 @@
 
 #include <LiquidCrystal.h>
 
-//-------------Global Variables-------------//
+//----------------Constants-----------------//
 const int LEFT = 1;
 const int RIGHT = 2;
 const int FORWARD = 3;
+const int THRESHOLD = 200; 					// light threshold for black arena tape
+const int ROTATE_90_MILLIS = 1000;
+const int ROTATE_180_MILLIS = 2000;
+const int NORMAL_SPEED = 100;
+const int FAST_SPEED = 200;
+const int DISTANCE_RANGE = 50;
 
+//-------------Global Variables-------------//
 
 // Pin Variables
-const int motorA1 = 8;
-const int motorA2 = 9;
-const int motorB1 = 6;
-const int motorB2 = 7;
-
+const int motorA1 = 9;
+const int motorA2 = 10;
+const int motorB1 = 3;
+const int motorB2 = 6;
 const int DIP1 = 11;
-const int DIP2 = 10; 
-
-const int LDR1 = A4;	// front LDR
-const int LDR2 = A5;	// back LDR
-
-int LDR1_reading, LDR2_reading;
-
-const int THRESHOLD = 200; 	// light threshold for black arena tape
-const int TURN_90_MILLIS = 500;
-const int ROTATE_180_MILLIS = 1000;
-
+const int DIP2 = 8;
+const int LDR1 = A4;
+const int LDR2 = A5;
 const int DISTANCESENSOR = 5;
-long distance, converted;
+
+// Helper variables
+int LDR1_reading, LDR2_reading;
+long distance;
 bool turn = false;		
+unsigned long curTime, exitTime;
 
 
 LiquidCrystal lcd(13, 12, 14, 15, 16, 17); 	// lcd display object
 
+/* 
+  This method checks the LDR's and sets turn 
+  status to true if arena boundary is detected.
+*/
 void checkLDR(){
   	LDR1_reading = analogRead(LDR1);
   	LDR2_reading = analogRead(LDR2);
-  	// if front LDR is on black tape, go backwards to stay in arena
+  	// if front LDR is on white tape, go backwards to stay in arena
   	if (LDR1_reading > THRESHOLD || LDR2_reading > THRESHOLD){
 		turn = true;		
     }
 }
 
-// This method pings the distance sensor and returns the 
-// distance of the object infront of the Sumo Bot.
+/*
+  This method pings the distance sensor and finds the 
+  distance of the object infront of the Sumo Bot.
+*/
 void getDistance(){  	
   	// Get input
  	pinMode(DISTANCESENSOR, OUTPUT);
   	digitalWrite(DISTANCESENSOR, LOW);
   	delayMicroseconds(2);
   	digitalWrite(DISTANCESENSOR, HIGH); 
-  	delayMicroseconds(10);
+  	delayMicroseconds(5);
   	digitalWrite(DISTANCESENSOR, LOW);
   	pinMode(DISTANCESENSOR, INPUT);
   	
   	// Convert input into distance in cm
-  	distance = pulseIn(DISTANCESENSOR, HIGH);
-  	converted = distance /29; 	
+  	distance = pulseIn(DISTANCESENSOR, HIGH)/58;
 }
 
-// This method checks the input states of the DIP switches
+/*
+  This method checks the initial input states
+  of the DIP switches, and determines 
+  the initial motion. 
+*/ 
 void checkDIP(){
 	int num1 = digitalRead(DIP1);
   	int num2 = digitalRead(DIP2);
-  	// TODO: add turning time and figure out how to do 180 turn
-    if (num1 == 1 && num2==1){		//back to back
-    	turn(RIGHT, TURNSPEED);
+    if (num1 == 1 && num2==1){		// back to back
+    	setMotion(RIGHT, NORMAL_SPEED);
+      	exitTime = millis() + ROTATE_180_MILLIS;
     }else if (num1 == 0 && num2 == 1){	// side by side (same dir)
-    	turn(LEFT, ); 
+    	setMotion(LEFT, NORMAL_SPEED); 
+      	exitTime = millis() + ROTATE_90_MILLIS;
     }else if (num1 == 1 && num2 == 0){	// side by side (opp dir)
-    	turn(RIGHT, ROTATE_90_MILLIS);
+    	setMotion(RIGHT, NORMAL_SPEED);
+      	exitTime = millis() + ROTATE_90_MILLIS;
     }
 }
 
-
-// This method updates the display on the SumoBot screen
+/*
+  This method updates the display on the SumoBot screen
+*/ 
 void updateDisplay(){
   	lcd.clear();
 	lcd.setCursor(0, 0);
   	lcd.print("Distance:");
-  	lcd.print(converted);
+  	lcd.print(distance);
   	lcd.print("cm");
   	lcd.setCursor(0, 1);	
   	lcd.print("LDR1:");
@@ -91,6 +105,10 @@ void updateDisplay(){
   	lcd.print(LDR2_reading);
 }
 
+/*
+  This method sets the motion of the sumobot motors
+  and takes in direction and speed it should use.
+*/
 void setMotion(int direction, int speed){
     switch (direction){
 		case LEFT:
@@ -111,10 +129,13 @@ void setMotion(int direction, int speed){
             analogWrite(motorB1, 0);
             analogWrite(motorB2, speed);
 			break;
-    }// TODO: switch the analog wires to tilda ones
-
+    }
 }
 
+/*
+  Initializes setup of components, and adjusts the 
+  orientation of the robot at the beginning of the fight.
+*/
 void setup(){
 	Serial.begin(9600); 	// serial for debugging
   
@@ -127,33 +148,27 @@ void setup(){
   	pinMode(motorB1, OUTPUT);
   	pinMode(motorB2, OUTPUT);
   
-  	
   	lcd.begin (16,2);
   
   	checkDIP();
-	// TODO add time shit here for initial turning
-
 }
 
 
 void loop(){
-  	unsigned long currentTime = millis();
-  
+  	curTime = millis();
   	getDistance();
   	checkLDR();
   	// Seeing an enemy and attacking takes priority
-  	if (converted < DISTANCE_RANGE){
-  		setMotion(FORWARD, ROTATE_90_MILLIS);
-    } else if (turn){
-		setMotion(RIGHT, ROTATE_90_MILLIS);	
-      	//TODO: add time control to stop turning
-    } else if (){
-     	//TODO: NOT ATTACKING GOING FORWARD
+  	if (distance < DISTANCE_RANGE){
+  		setMotion(FORWARD, FAST_SPEED);
+    } else if (turn){	// If turn needed (exiting arena), turn 90 degrees.
+		setMotion(RIGHT, NORMAL_SPEED);	 
+      	exitTime = curTime + ROTATE_90_MILLIS;
+      	turn = false;
+    } else if (curTime > exitTime){	// If turn time complete, go forward 
+     	setMotion(FORWARD, NORMAL_SPEED);
     }
-    
+
   	updateDisplay();
-
-
-    
 	delay(100);
 }
